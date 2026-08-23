@@ -364,6 +364,28 @@
     .lb-stars{ width:54px; }
     .lb-time{ width:62px; }
   }
+
+  /* ===== MAINAN PLANET INTERAKTIF (SIDEBAR) ===== */
+  .planet-toy{
+    margin-top:14px; background: rgba(255,255,255,0.55); border-radius:18px; padding:10px 10px 8px;
+  }
+  .planet-toy-title{ margin:0 0 6px; font-size:12.5px; font-weight:800; color:var(--purple); text-align:center; }
+  .planet-toy-hint{ margin:6px 0 0; font-size:10.5px; font-weight:700; color:#7A75A8; text-align:center; }
+  .planet-toy-box{
+    position:relative; height:150px; border-radius:14px; overflow:hidden;
+    background: radial-gradient(ellipse 70% 60% at 30% 0%, rgba(255,255,255,.16), transparent 60%), linear-gradient(180deg, #342C77 0%, #221D4E 100%);
+  }
+  .toy-planet{
+    position:absolute; font-size:28px; line-height:1; cursor:grab; touch-action:none; user-select:none;
+    filter:drop-shadow(0 2px 5px rgba(0,0,0,.35)); will-change: transform;
+  }
+  .toy-planet:active{ cursor:grabbing; }
+  .toy-planet.spin{ animation: toy-spin .6s ease; }
+  @keyframes toy-spin{
+    0%{ transform:rotate(0deg) scale(1); }
+    50%{ transform:rotate(200deg) scale(1.35); }
+    100%{ transform:rotate(360deg) scale(1); }
+  }
 </style>
 </head>
 <body>
@@ -481,6 +503,18 @@
     <div class="sidebar">
       <h2>Pilih Level</h2>
       <div class="level-list" id="levelList"></div>
+
+      <div class="planet-toy" aria-hidden="true">
+        <p class="planet-toy-title">🪐 Mainan Planet</p>
+        <div class="planet-toy-box" id="planetToyBox">
+          <div class="toy-planet" style="left:8%; top:18%;">🪐</div>
+          <div class="toy-planet" style="left:58%; top:12%;">🌍</div>
+          <div class="toy-planet" style="left:28%; top:58%;">🌕</div>
+          <div class="toy-planet" style="left:68%; top:55%;">☄️</div>
+          <div class="toy-planet" style="left:44%; top:35%;">🛰️</div>
+        </div>
+        <p class="planet-toy-hint">Seret atau ketuk planetnya ✨</p>
+      </div>
     </div>
 
     <div class="main-panel" id="mainPanel">
@@ -713,6 +747,44 @@ async function submitLeaderboard(accountId, durationSeconds, totalStars){
 }
 
 listenLeaderboard();
+
+/* ===== MAINAN PLANET INTERAKTIF (sidebar) ===== */
+function setupPlanetToy(){
+  const box = $('planetToyBox');
+  if(!box) return;
+  box.querySelectorAll('.toy-planet').forEach((p)=>{
+    let startX, startY, origLeft, origTop, moved;
+    p.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      p.setPointerCapture(e.pointerId);
+      startX = e.clientX; startY = e.clientY;
+      origLeft = p.offsetLeft; origTop = p.offsetTop;
+      moved = false;
+      p.style.zIndex = 5;
+    });
+    p.addEventListener('pointermove', (e)=>{
+      if(startX===undefined) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if(Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      const boxRect = box.getBoundingClientRect();
+      const maxLeft = boxRect.width - p.offsetWidth;
+      const maxTop = boxRect.height - p.offsetHeight;
+      p.style.left = Math.max(0, Math.min(maxLeft, origLeft + dx)) + 'px';
+      p.style.top = Math.max(0, Math.min(maxTop, origTop + dy)) + 'px';
+    });
+    p.addEventListener('pointerup', ()=>{
+      if(!moved){
+        p.classList.remove('spin');
+        void p.offsetWidth;
+        p.classList.add('spin');
+      }
+      startX = undefined;
+    });
+    p.addEventListener('pointercancel', ()=>{ startX = undefined; });
+  });
+}
+setupPlanetToy();
 
 function showToast(msg){
   const t = $('toast');
@@ -1059,6 +1131,11 @@ function attachDrag(card){
     if(!state.dragging || state.dragging.card !== card) return;
     handleDrop(e.clientX, e.clientY);
   });
+
+  card.addEventListener('pointercancel', ()=>{
+    if(!state.dragging || state.dragging.card !== card) return;
+    handleDrop(-9999, -9999);
+  });
 }
 
 function handleDrop(x,y){
@@ -1067,6 +1144,7 @@ function handleDrop(x,y){
   d.card.style.position='';
   d.card.style.left=''; d.card.style.top=''; d.card.style.width='';
   d.placeholder.remove();
+  d.card.remove(); // hapus kartu lama dari body — renderGame() akan membuat kartu baru, jadi ini mencegah kartu "nyangkut" jadi tampilan aneh di bawah halaman
 
   let target = document.elementFromPoint(x,y);
   let slotEl = target ? target.closest('.slot') : null;
