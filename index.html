@@ -290,7 +290,10 @@
     .main-panel{ order:1; }
     .level-list{ max-height:none; flex-direction:row; overflow-x:auto; overflow-y:visible; padding-bottom:6px; }
     .level-node{ min-width:220px; }
+    .welcome-desktop-text{ display:none; }
+    .welcome-mobile-text{ display:inline; }
   }
+  .welcome-mobile-text{ display:none; }
   @media (max-width: 560px){
     .slots{ grid-template-columns:1fr; }
     .slot{ min-height:52px; }
@@ -521,7 +524,7 @@
     <div class="main-panel" id="mainPanel">
       <div class="welcome" id="welcomeState">
         <div class="big-emoji">🧩</div>
-        <h2>Yuk pilih level di sebelah kiri!</h2>
+        <h2><span class="welcome-desktop-text">Yuk pilih level di sebelah kiri!</span><span class="welcome-mobile-text">Yuk pilih level di bawah!</span></h2>
         <p>Susun langkah-langkahnya biar semuanya jalan dengan benar.</p>
       </div>
 
@@ -749,41 +752,116 @@ async function submitLeaderboard(accountId, durationSeconds, totalStars){
 
 listenLeaderboard();
 
-/* ===== MAINAN PLANET INTERAKTIF (sidebar) ===== */
+/* ===== MAINAN PLANET INTERAKTIF (sidebar) — bergerak sendiri & mantul ===== */
 function setupPlanetToy(){
   const box = $('planetToyBox');
   if(!box) return;
-  box.querySelectorAll('.toy-planet').forEach((p)=>{
-    let startX, startY, origLeft, origTop, moved;
-    p.addEventListener('pointerdown', (e)=>{
+  const els = Array.from(box.querySelectorAll('.toy-planet'));
+
+  const planets = els.map((el)=>({
+    el,
+    x: el.offsetLeft,
+    y: el.offsetTop,
+    vx: (Math.random()*2-1) * 45,
+    vy: (Math.random()*2-1) * 45,
+    dragging: false
+  }));
+
+  function attachDrag(p){
+    const el = p.el;
+    let startX, startY, origX, origY, moved;
+    el.addEventListener('pointerdown', (e)=>{
       e.preventDefault();
-      p.setPointerCapture(e.pointerId);
+      el.setPointerCapture(e.pointerId);
+      p.dragging = true;
       startX = e.clientX; startY = e.clientY;
-      origLeft = p.offsetLeft; origTop = p.offsetTop;
+      origX = p.x; origY = p.y;
       moved = false;
-      p.style.zIndex = 5;
+      el.style.zIndex = 5;
     });
-    p.addEventListener('pointermove', (e)=>{
-      if(startX===undefined) return;
+    el.addEventListener('pointermove', (e)=>{
+      if(!p.dragging) return;
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
       if(Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
       const boxRect = box.getBoundingClientRect();
-      const maxLeft = boxRect.width - p.offsetWidth;
-      const maxTop = boxRect.height - p.offsetHeight;
-      p.style.left = Math.max(0, Math.min(maxLeft, origLeft + dx)) + 'px';
-      p.style.top = Math.max(0, Math.min(maxTop, origTop + dy)) + 'px';
+      const size = el.offsetWidth || 28;
+      p.x = Math.max(0, Math.min(boxRect.width - size, origX + dx));
+      p.y = Math.max(0, Math.min(boxRect.height - size, origY + dy));
+      el.style.left = p.x + 'px';
+      el.style.top = p.y + 'px';
     });
-    p.addEventListener('pointerup', ()=>{
+    function endDrag(){
+      if(!p.dragging) return;
+      p.dragging = false;
+      el.style.zIndex = '';
       if(!moved){
-        p.classList.remove('spin');
-        void p.offsetWidth;
-        p.classList.add('spin');
+        el.classList.remove('spin');
+        void el.offsetWidth;
+        el.classList.add('spin');
       }
-      startX = undefined;
+      // lepas dengan kecepatan acak baru biar lanjut bergerak sendiri
+      p.vx = (Math.random()*2-1) * 55;
+      p.vy = (Math.random()*2-1) * 55;
+    }
+    el.addEventListener('pointerup', endDrag);
+    el.addEventListener('pointercancel', endDrag);
+  }
+  planets.forEach(attachDrag);
+
+  let lastTime = null;
+  function tick(now){
+    if(lastTime===null) lastTime = now;
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+    const boxRect = box.getBoundingClientRect();
+    const boxW = boxRect.width, boxH = boxRect.height;
+
+    // gerak & mantul di dinding kotak
+    planets.forEach((p)=>{
+      if(p.dragging) return;
+      const size = p.el.offsetWidth || 28;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if(p.x <= 0){ p.x = 0; p.vx = Math.abs(p.vx); }
+      if(p.x >= boxW - size){ p.x = boxW - size; p.vx = -Math.abs(p.vx); }
+      if(p.y <= 0){ p.y = 0; p.vy = Math.abs(p.vy); }
+      if(p.y >= boxH - size){ p.y = boxH - size; p.vy = -Math.abs(p.vy); }
     });
-    p.addEventListener('pointercancel', ()=>{ startX = undefined; });
-  });
+
+    // mantul kalau saling bertabrakan
+    for(let i=0; i<planets.length; i++){
+      for(let j=i+1; j<planets.length; j++){
+        const a = planets[i], b = planets[j];
+        if(a.dragging || b.dragging) continue;
+        const sizeA = a.el.offsetWidth || 28;
+        const sizeB = b.el.offsetWidth || 28;
+        const ax = a.x + sizeA/2, ay = a.y + sizeA/2;
+        const bx = b.x + sizeB/2, by = b.y + sizeB/2;
+        const dx = bx - ax, dy = by - ay;
+        const dist = Math.sqrt(dx*dx + dy*dy) || 0.01;
+        const minDist = (sizeA + sizeB) / 2 * 0.72;
+        if(dist < minDist){
+          const nx = dx/dist, ny = dy/dist;
+          const overlap = minDist - dist;
+          a.x -= nx * overlap/2; a.y -= ny * overlap/2;
+          b.x += nx * overlap/2; b.y += ny * overlap/2;
+          const tvx = a.vx, tvy = a.vy;
+          a.vx = b.vx; a.vy = b.vy;
+          b.vx = tvx; b.vy = tvy;
+        }
+      }
+    }
+
+    planets.forEach((p)=>{
+      if(p.dragging) return;
+      p.el.style.left = p.x + 'px';
+      p.el.style.top = p.y + 'px';
+    });
+
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
 }
 setupPlanetToy();
 
