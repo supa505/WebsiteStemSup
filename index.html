@@ -334,6 +334,36 @@
   @media (max-width:430px){
     .music-btn{ width:40px; height:40px; font-size:16px; top:10px; right:10px; }
   }
+
+  /* ===== PAPAN PERINGKAT / LEADERBOARD ===== */
+  .leaderboard-panel{
+    margin-top:20px; width:100%; max-width:640px;
+    background: rgba(255,255,255,0.85); backdrop-filter: blur(10px);
+    border-radius: var(--radius-lg); padding:18px 20px 14px;
+    box-shadow: 0 6px 0 rgba(0,0,0,0.07);
+  }
+  .lb-title{ margin:0 0 12px; font-size:15.5px; color:var(--purple); text-align:left; }
+  .lb-head-row, .lb-row{ display:flex; align-items:center; gap:10px; padding:0 12px; }
+  .lb-head-row{ font-size:11px; font-weight:800; color:#8B85BD; text-transform:uppercase; letter-spacing:.4px; margin-bottom:6px; }
+  .lb-list{ display:flex; flex-direction:column; gap:6px; max-height:280px; overflow-y:auto; }
+  .lb-row{
+    background:#fff; border-radius:12px; padding:9px 12px; font-weight:800; font-size:13.5px;
+    color:var(--purple-deep); box-shadow: 0 3px 0 rgba(0,0,0,0.05);
+  }
+  .lb-row.top1{ background:#FFF3CE; }
+  .lb-row.top2{ background:#EFEFF7; }
+  .lb-row.top3{ background:#FBE3D6; }
+  .lb-rank{ width:22px; flex-shrink:0; text-align:center; }
+  .lb-name{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lb-stars{ flex-shrink:0; width:64px; }
+  .lb-time{ flex-shrink:0; width:76px; text-align:right; color:var(--coral); }
+  .lb-empty{ text-align:center; color:#7A75A8; font-weight:700; font-size:13px; margin:10px 0; }
+  @media (max-width:430px){
+    .leaderboard-panel{ padding:14px 12px 10px; }
+    .lb-row, .lb-head-row{ font-size:12px; padding:0 8px; }
+    .lb-stars{ width:54px; }
+    .lb-time{ width:62px; }
+  }
 </style>
 </head>
 <body>
@@ -432,6 +462,20 @@
     <button class="back-link hidden" id="btnBackToChoice">← Kembali ke pilihan</button>
   </div>
 
+  <!-- PAPAN PERINGKAT / HISTORY AKUN YANG SUDAH SELESAI -->
+  <div class="leaderboard-panel" id="leaderboardPanel">
+    <h2 class="lb-title">🏆 Papan Peringkat &amp; Riwayat — Sudah Menyelesaikan Semua Level</h2>
+    <div class="lb-head-row">
+      <div class="lb-rank">#</div>
+      <div class="lb-name">User ID</div>
+      <div class="lb-stars">Bintang</div>
+      <div class="lb-time">Waktu</div>
+    </div>
+    <div class="lb-list" id="leaderboardList">
+      <p class="lb-empty">Memuat papan peringkat...</p>
+    </div>
+  </div>
+
   <!-- MAIN GAME SCREEN -->
   <div class="layout hidden" id="mainLayout">
     <div class="sidebar">
@@ -508,6 +552,8 @@
 <button class="music-btn" id="btnMusicToggle" type="button" aria-label="Nyalakan atau matikan musik">🔊</button>
 <div id="ytAudioPlayer" style="position:fixed; left:-9999px; top:-9999px; width:1px; height:1px; overflow:hidden;"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
 const LEVEL_VERSION = 4;
 const LEVELS = [
@@ -565,6 +611,108 @@ let state = {
 };
 
 const $ = (id)=>document.getElementById(id);
+
+/* ===== FIREBASE — untuk Papan Peringkat yang terlihat oleh SEMUA orang =====
+   GitHub Pages hanya hosting statis (tidak punya database sendiri), jadi
+   Papan Peringkat memakai Firebase Firestore (gratis) sebagai databasenya.
+
+   WAJIB DIISI: ganti 6 nilai di bawah dengan konfigurasi project Firebase-mu.
+   Cara mendapatkannya ada di penjelasan yang dikirim bersama file ini.
+*/
+const firebaseConfig = {
+  apiKey: "AIzaSyCFdLoCVqJogVdaaf0nhEGOgIaVNhUe5sI",
+  authDomain: "stemleaderboard1.firebaseapp.com",
+  projectId: "stemleaderboard1",
+  storageBucket: "stemleaderboard1.firebasestorage.app",
+  messagingSenderId: "968625004914",
+  appId: "1:968625004914:web:d1a05f87b46a92d341bdeb"
+};
+
+let db = null;
+try{
+  if(window.firebase && firebaseConfig.apiKey.indexOf('GANTI') === -1){
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+  }
+}catch(err){
+  console.warn('Firebase belum terhubung.', err);
+}
+
+function formatDuration(totalSeconds){
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s/3600);
+  const m = Math.floor((s%3600)/60);
+  const sec = s%60;
+  if(h>0) return `${h}j ${m}m`;
+  if(m>0) return `${m}m ${sec}d`;
+  return `${sec}d`;
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = String(str);
+  return div.innerHTML;
+}
+
+function renderLeaderboard(rows){
+  const wrap = $('leaderboardList');
+  if(!wrap) return;
+  if(!db){
+    wrap.innerHTML = '<p class="lb-empty">Papan peringkat belum aktif. Hubungkan Firebase dulu di kode ya.</p>';
+    return;
+  }
+  if(!rows.length){
+    wrap.innerHTML = '<p class="lb-empty">Belum ada yang menyelesaikan semua level. Jadilah yang pertama! 🚀</p>';
+    return;
+  }
+  wrap.innerHTML = rows.map((r, idx)=>{
+    const rankClass = idx===0 ? ' top1' : idx===1 ? ' top2' : idx===2 ? ' top3' : '';
+    const medal = idx===0 ? '🥇' : idx===1 ? '🥈' : idx===2 ? '🥉' : (idx+1);
+    return `
+      <div class="lb-row${rankClass}">
+        <div class="lb-rank">${medal}</div>
+        <div class="lb-name">${escapeHtml(r.accountId)}</div>
+        <div class="lb-stars">⭐ ${r.totalStars ?? 0}</div>
+        <div class="lb-time">${formatDuration(r.durationSeconds ?? 0)}</div>
+      </div>`;
+  }).join('');
+}
+
+function listenLeaderboard(){
+  if(!db){ renderLeaderboard([]); return; }
+  db.collection('leaderboard').orderBy('durationSeconds', 'asc').limit(50)
+    .onSnapshot((snap)=>{
+      const rows = [];
+      snap.forEach(doc=> rows.push(doc.data()));
+      renderLeaderboard(rows);
+    }, (err)=>{
+      console.warn('Gagal memuat papan peringkat', err);
+      $('leaderboardList').innerHTML = '<p class="lb-empty">Gagal memuat papan peringkat. Cek koneksi atau aturan Firestore.</p>';
+    });
+}
+
+// Simpan/perbarui hasil akun ke Papan Peringkat. Kalau akun sudah pernah
+// tercatat, hanya diperbarui jika waktunya sekarang LEBIH CEPAT (rekor terbaik
+// tetap tersimpan sebagai riwayat di papan itu).
+async function submitLeaderboard(accountId, durationSeconds, totalStars){
+  if(!db || !accountId) return;
+  try{
+    const ref = db.collection('leaderboard').doc(accountId);
+    const snap = await ref.get();
+    if(!snap.exists || durationSeconds < (snap.data().durationSeconds ?? Infinity)){
+      await ref.set({
+        accountId,
+        durationSeconds,
+        totalStars,
+        completedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+  }catch(err){
+    console.warn('Gagal menyimpan ke papan peringkat', err);
+  }
+}
+
+listenLeaderboard();
 
 function showToast(msg){
   const t = $('toast');
@@ -636,7 +784,7 @@ async function storageSet(key, value){
 async function saveProgress(){
   if(!state.account) return;
   try{
-    const data = { unlockedUpTo: state.unlockedUpTo, starsPerLevel: state.starsPerLevel, levelCount: LEVELS.length, levelVersion: LEVEL_VERSION };
+    const data = { unlockedUpTo: state.unlockedUpTo, starsPerLevel: state.starsPerLevel, levelCount: LEVELS.length, levelVersion: LEVEL_VERSION, createdAt: state.createdAt };
     const saved = await storageSet(accountKey(state.account), JSON.stringify(data));
     if(!saved) throw new Error('Tidak ada penyimpanan yang tersedia');
   }catch(err){
@@ -673,7 +821,7 @@ async function createNewAccount(){
       return;
     }
 
-    const profile = {unlockedUpTo:0, starsPerLevel: LEVELS.map(()=>0), levelCount: LEVELS.length, levelVersion: LEVEL_VERSION};
+    const profile = {unlockedUpTo:0, starsPerLevel: LEVELS.map(()=>0), levelCount: LEVELS.length, levelVersion: LEVEL_VERSION, createdAt: Date.now()};
     const saved = await storageSet(accountKey(id), JSON.stringify(profile));
     if(!saved) throw new Error('Tidak ada penyimpanan yang tersedia');
 
@@ -740,6 +888,7 @@ $('loginCodeInput').addEventListener('keydown', (e)=>{ if(e.key === 'Enter') doL
 
 function loginToAccount(code, data){
   state.account = code;
+  state.createdAt = Number.isInteger(data.createdAt) ? data.createdAt : Date.now();
   const hasCurrentCurriculum = data.levelVersion === LEVEL_VERSION;
   const savedStars = hasCurrentCurriculum && Array.isArray(data.starsPerLevel) ? data.starsPerLevel : [];
   state.starsPerLevel = LEVELS.map((_, index)=>{
@@ -989,10 +1138,21 @@ function finishLevel(){
   renderLevelMap();
   saveProgress();
   $('overlay').classList.add('active');
+
+  if(i === LEVELS.length - 1){
+    const totalStars = state.starsPerLevel.reduce((a,b)=>a+b, 0);
+    const durationSeconds = Math.round((Date.now() - (state.createdAt || Date.now())) / 1000);
+    submitLeaderboard(state.account, durationSeconds, totalStars);
+  }
 }
 
-/* ===== MUSIK LATAR (loop terus) ===== */
-const BGM_VIDEO_ID = '2XW0GnQGFZE';
+/* ===== MUSIK LATAR (loop terus) — "Bundle of Joy" instrumental (Inside Out) =====
+   Video resmi dari label (Universal Music Group) biasanya MENGUNCI fitur embed,
+   makanya sebelumnya tidak kedengaran. Di bawah ini daftar video cadangan —
+   kalau satu gagal dimuat/di-embed, otomatis pindah ke video berikutnya.
+*/
+const BGM_CANDIDATES = ['tB9_z2_XmMw', 'aqj2FUVF_Jk', 'Fzw3Lf5E0K8', 'O4N0Fsnsr4I'];
+let bgmIndex = 0;
 let ytPlayer = null;
 let ytReady = false;
 let musicStarted = false;
@@ -1009,13 +1169,11 @@ window.onYouTubeIframeAPIReady = function(){
   ytPlayer = new YT.Player('ytAudioPlayer', {
     height: '1',
     width: '1',
-    videoId: BGM_VIDEO_ID,
+    videoId: BGM_CANDIDATES[bgmIndex],
     playerVars: {
       autoplay: 0,
       controls: 0,
       disablekb: 1,
-      loop: 1,
-      playlist: BGM_VIDEO_ID,
       playsinline: 1,
       fs: 0,
       modestbranding: 1,
@@ -1027,6 +1185,16 @@ window.onYouTubeIframeAPIReady = function(){
         if(e.data === YT.PlayerState.ENDED){
           ytPlayer.seekTo(0);
           ytPlayer.playVideo();
+        }
+      },
+      onError: function(){
+        console.warn('Video musik ' + BGM_CANDIDATES[bgmIndex] + ' gagal dimuat, coba video cadangan...');
+        bgmIndex++;
+        if(bgmIndex < BGM_CANDIDATES.length){
+          ytPlayer.loadVideoById(BGM_CANDIDATES[bgmIndex]);
+          if(musicStarted) ytPlayer.playVideo();
+        } else {
+          console.warn('Semua sumber musik gagal dimuat.');
         }
       }
     }
