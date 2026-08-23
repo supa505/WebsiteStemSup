@@ -302,6 +302,38 @@
     .level-heading h2{ font-size:17px; }
     .account-screen h1{ font-size:24px; }
   }
+
+  /* ===== PENYESUAIAN HP POTRAIT ===== */
+  @media (max-width: 430px){
+    .app{ padding: 12px 10px 40px; }
+    .topbar{ padding: 8px 12px; border-radius: 18px; }
+    .robi{ width:48px; height:48px; }
+    .account-cards{ flex-direction:column; }
+    .account-card{ min-width:0; width:100%; padding:20px 16px; }
+    .account-panel{ padding: 20px 16px; border-radius:18px; }
+    .code-display{ font-size:22px; padding:12px; }
+    .card{ font-size:13px; padding:7px 9px; }
+    .card .emoji{ font-size:19px; }
+    .btn{ font-size:14px; padding:12px 18px; }
+    .complete-card{ padding:22px 18px; }
+  }
+  @media (orientation: portrait){
+    .layout{ grid-template-columns: 1fr; }
+    .sidebar{ order:2; }
+    .main-panel{ order:1; }
+    .level-list{ max-height:none; flex-direction:row; overflow-x:auto; overflow-y:visible; padding-bottom:6px; }
+    .level-node{ min-width:200px; }
+  }
+
+  .music-btn{
+    position:fixed; top:14px; right:14px; z-index:700; width:46px; height:46px; border-radius:50%;
+    border:none; background:#fff; box-shadow: 0 4px 0 rgba(0,0,0,0.12); font-size:20px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .music-btn:active{ transform: translateY(2px); box-shadow:none; }
+  @media (max-width:430px){
+    .music-btn{ width:40px; height:40px; font-size:16px; top:10px; right:10px; }
+  }
 </style>
 </head>
 <body>
@@ -472,6 +504,9 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<button class="music-btn" id="btnMusicToggle" type="button" aria-label="Nyalakan atau matikan musik">🔊</button>
+<div id="ytAudioPlayer" style="position:fixed; left:-9999px; top:-9999px; width:1px; height:1px; overflow:hidden;"></div>
 
 <script>
 const LEVEL_VERSION = 4;
@@ -955,6 +990,75 @@ function finishLevel(){
   saveProgress();
   $('overlay').classList.add('active');
 }
+
+/* ===== MUSIK LATAR (loop terus) ===== */
+const BGM_VIDEO_ID = '2XW0GnQGFZE';
+let ytPlayer = null;
+let ytReady = false;
+let musicStarted = false;
+let musicMuted = false;
+
+function loadYouTubeAPI(){
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+}
+loadYouTubeAPI();
+
+window.onYouTubeIframeAPIReady = function(){
+  ytPlayer = new YT.Player('ytAudioPlayer', {
+    height: '1',
+    width: '1',
+    videoId: BGM_VIDEO_ID,
+    playerVars: {
+      autoplay: 0,
+      controls: 0,
+      disablekb: 1,
+      loop: 1,
+      playlist: BGM_VIDEO_ID,
+      playsinline: 1,
+      fs: 0,
+      modestbranding: 1,
+      rel: 0
+    },
+    events: {
+      onReady: function(){ ytReady = true; tryStartMusic(); },
+      onStateChange: function(e){
+        if(e.data === YT.PlayerState.ENDED){
+          ytPlayer.seekTo(0);
+          ytPlayer.playVideo();
+        }
+      }
+    }
+  });
+};
+
+function tryStartMusic(){
+  if(musicStarted || !ytReady || !ytPlayer) return;
+  musicStarted = true;
+  try{
+    ytPlayer.setVolume(60);
+    ytPlayer.playVideo();
+  }catch(err){ console.warn('Gagal memulai musik otomatis', err); }
+}
+
+// Browser biasanya butuh interaksi pengguna sebelum bisa memutar audio.
+// Sentuhan/klik pertama di mana saja akan otomatis menyalakan musik.
+document.addEventListener('pointerdown', tryStartMusic, { once: true });
+
+$('btnMusicToggle').addEventListener('click', function(e){
+  e.stopPropagation();
+  if(!ytReady || !ytPlayer){ return; }
+  tryStartMusic();
+  musicMuted = !musicMuted;
+  if(musicMuted){
+    ytPlayer.mute();
+    $('btnMusicToggle').textContent = '🔇';
+  } else {
+    ytPlayer.unMute();
+    $('btnMusicToggle').textContent = '🔊';
+  }
+});
 </script>
 </body>
 </html>
